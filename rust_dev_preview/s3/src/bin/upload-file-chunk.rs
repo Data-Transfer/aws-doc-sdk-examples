@@ -1,15 +1,16 @@
 use aws_sdk_s3::types::ByteStream;
 use aws_sdk_s3::{Client, Endpoint, Error};
 use std::path::Path;
-use tokio_util::codec::{BytesCodec, FramedRead};
 use std::time::Instant;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_util::codec::{BytesCodec, FramedRead};
 
 /// # Upload file chunk
 ///
 /// ## Shows how to:
 ///
 /// * read a chunk of data from a file using:
-///    - `tokio::fs::File::seek` 
+///    - `tokio::fs::File::seek`
 ///    - `tokio::io::AsyncReadExt::take (added to tokio::fs::File,
 ///                                    limits the number bytes read)`
 /// * minimize memory usage through tokio_util::FramedRead/BytesCodec which
@@ -81,7 +82,6 @@ pub async fn upload_chunk(
     let mut file = tokio::fs::File::open(Path::new(file_name))
         .await
         .map_err(|err| Error::Unhandled(Box::new(err)))?;
-    use tokio::io::{AsyncReadExt, AsyncSeekExt};
     file.seek(std::io::SeekFrom::Start(start_offset))
         .await
         .map_err(|err| Error::Unhandled(Box::new(err)))?;

@@ -4,7 +4,6 @@ use std::path::Path;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::codec::{BytesCodec, FramedRead};
-
 /// # Upload file chunk
 ///
 /// ## Shows how to:

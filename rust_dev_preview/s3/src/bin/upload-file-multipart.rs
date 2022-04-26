@@ -64,7 +64,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
 }
 
 /// Multipart upload
-/// 
+///
 /// 1. retrieve `upload id`
 /// 2. iterate over file chunks and send each chunk as a separate part
 /// 3. store returned `etag` and `part number` into `Vec`

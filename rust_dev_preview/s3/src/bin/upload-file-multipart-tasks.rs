@@ -4,13 +4,14 @@ use aws_sdk_s3::types::ByteStream;
 use aws_sdk_s3::{Client, Endpoint, Error};
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::runtime;
 use tokio_util::codec::{BytesCodec, FramedRead};
 /// Parallel multipart upload, one task per part.
 ///
 /// ## Usage
 /// ```
 /// upload-file-multipart-parallel <profile> <url> <bucket> <key> \
-///   <input file> <number of parts> [optional read buffer size]
+///   <input file> <number of parts> <number of tasks> [optional read buffer size]
 /// ```
 ///
 #[tokio::main]
@@ -31,7 +32,15 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         .expect(&usage)
         .parse::<usize>()
         .expect("Error parsing num parts");
-    let buffer_capacity = if let Some(arg) = args.get(7) {
+    let num_tasks = args
+        .get(7)
+        .expect(&usage)
+        .parse::<usize>()
+        .expect("Error parsing num tasks");
+    if num_tasks > num_parts {
+        panic!("Number of tasks greater than number of parts");
+    }
+    let buffer_capacity = if let Some(arg) = args.get(8) {
         Some(arg.parse::<usize>().expect("Wrong buffer size format"))
     } else {
         None
@@ -59,6 +68,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         &file_name,
         &key,
         num_parts,
+        num_tasks,
         buffer_capacity,
     )
     .await?;
@@ -79,6 +89,7 @@ pub async fn upload_multipart_parallel(
     file_name: &str,
     key: &str,
     num_parts: usize,
+    num_tasks: usize,
     buffer_capacity: Option<usize>,
 ) -> Result<(), Error> {
     let len: u64 = std::fs::metadata(file_name)
@@ -103,6 +114,11 @@ pub async fn upload_multipart_parallel(
     // Iterate over file chunks, changing the file pointer at each iteration
     // and storing part id and associated etag into vector.
     let mut handles = Vec::new();
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(num_tasks)
+        .build()
+        .unwrap();
+
     for i in 0..num_parts {
         let client = client.clone();
         let bucket = bucket.to_string();
@@ -117,7 +133,7 @@ pub async fn upload_multipart_parallel(
         let uid = uid.to_string();
         let file_name = file_name.to_string();
 
-        let cp = tokio::spawn(async move {
+        let cp = rt.spawn(async move {
             upload_part(
                 client,
                 file_name,

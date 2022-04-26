@@ -9,7 +9,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 /// ## Usage
 /// ```shell
 /// upload-file-multipart <profile> <url> <bucket> <key> <input file> \
-///   <number of parts> [optional buffer size]
+///   <number of parts> [optional read buffer size]
 /// ```
 ///
 #[tokio::main]
@@ -30,12 +30,12 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         .expect(&usage)
         .parse::<usize>()
         .expect("Error parsing num parts");
-    // credentials are read from .aws/credentials file
     let buffer_capacity = if let Some(arg) = args.get(7) {
         Some(arg.parse::<usize>().expect("Wrong buffer size format"))
     } else {
         None
     };
+    // credentials are read from .aws/credentials file
     let conf = aws_config::from_env()
         .region(REGION)
         .credentials_provider(

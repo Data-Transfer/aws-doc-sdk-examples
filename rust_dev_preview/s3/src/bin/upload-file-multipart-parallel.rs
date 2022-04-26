@@ -66,12 +66,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
     println!("Uploaded file in {:.2} s", elapsed.as_secs_f32());
     Ok(())
 }
-//  to set number of threads:
-//    let mut rt = runtime::Builder::new()
-//                 .core_threads(4)
-//                 .build()
-//                 .unwrap();
-//    rt.spawn(...);
+
 /// Parallel multipart upload, one task per part.
 pub async fn upload_multipart_parallel(
     client: &Client,
@@ -113,7 +108,7 @@ pub async fn upload_multipart_parallel(
         } else {
             last_chunk_size
         };
-        let offset = (i * len / num_parts) as u64;
+        let offset = (i * chunk_size) as u64;
         let uid = uid.to_string();
         let file_name = file_name.to_string();
 

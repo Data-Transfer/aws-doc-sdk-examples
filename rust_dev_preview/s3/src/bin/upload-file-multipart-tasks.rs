@@ -4,18 +4,18 @@ use aws_sdk_s3::types::ByteStream;
 use aws_sdk_s3::{Client, Endpoint, Error};
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio::runtime;
 use tokio_util::codec::{BytesCodec, FramedRead};
 /// Parallel multipart upload, one task per part.
+/// Number of worker threads and read buffer size can be configured from
+/// the command line.
 ///
 /// ## Usage
 /// ```
 /// upload-file-multipart-parallel <profile> <url> <bucket> <key> \
-///   <input file> <number of parts> <number of tasks> [optional read buffer size]
+///   <input file> <number of parts> <number of workers> [optional read buffer size]
 /// ```
 ///
-#[tokio::main]
-async fn main() -> Result<(), aws_sdk_s3::Error> {
+fn main() -> Result<(), aws_sdk_s3::Error> {
     const REGION: &str = "us-east-1";
     let args = std::env::args().collect::<Vec<_>>();
     let usage = format!(
@@ -32,49 +32,53 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         .expect(&usage)
         .parse::<usize>()
         .expect("Error parsing num parts");
-    let num_tasks = args
+    let num_threads = args
         .get(7)
         .expect(&usage)
         .parse::<usize>()
-        .expect("Error parsing num tasks");
-    if num_tasks > num_parts {
-        panic!("Number of tasks greater than number of parts");
-    }
+        .expect("Error parsing num threads");
     let buffer_capacity = if let Some(arg) = args.get(8) {
         Some(arg.parse::<usize>().expect("Wrong buffer size format"))
     } else {
         None
     };
-    // credentials are read from .aws/credentials file
-    let conf = aws_config::from_env()
-        .region(REGION)
-        .credentials_provider(
-            aws_config::profile::ProfileFileCredentialsProvider::builder()
-                .profile_name(profile)
-                .build(),
-        )
-        .load()
-        .await;
-    let uri = url.parse::<http::uri::Uri>().expect("Invalid URL");
-    let ep = Endpoint::immutable(uri);
-    let s3_conf = aws_sdk_s3::config::Builder::from(&conf)
-        .endpoint_resolver(ep)
-        .build();
-    let client = Client::from_conf(s3_conf);
-    let start = Instant::now();
-    upload_multipart_parallel(
-        &client,
-        &bucket,
-        &file_name,
-        &key,
-        num_parts,
-        num_tasks,
-        buffer_capacity,
-    )
-    .await?;
-    let elapsed = start.elapsed();
-    println!("Uploaded file in {:.2} s", elapsed.as_secs_f32());
-    Ok(())
+    //Note: the total number of threads spawn should be number or worker threads + 1
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(num_threads)
+        .enable_all()
+        .build()
+        .map_err(|err| Error::Unhandled(Box::new(err)))?
+        .block_on(async move {
+            // credentials are read from .aws/credentials file
+            let conf = aws_config::from_env()
+                .region(REGION)
+                .credentials_provider(
+                    aws_config::profile::ProfileFileCredentialsProvider::builder()
+                        .profile_name(profile)
+                        .build(),
+                )
+                .load()
+                .await;
+            let uri = url.parse::<http::uri::Uri>().expect("Invalid URL");
+            let ep = Endpoint::immutable(uri);
+            let s3_conf = aws_sdk_s3::config::Builder::from(&conf)
+                .endpoint_resolver(ep)
+                .build();
+            let client = Client::from_conf(s3_conf);
+            let start = Instant::now();
+            upload_multipart_parallel(
+                &client,
+                &bucket,
+                &file_name,
+                &key,
+                num_parts,
+                buffer_capacity,
+            )
+            .await?;
+            let elapsed = start.elapsed();
+            println!("Uploaded file in {:.2} s", elapsed.as_secs_f32());
+            Ok(())
+        })
 }
 //  to set number of threads:
 //    let mut rt = runtime::Builder::new()
@@ -89,7 +93,6 @@ pub async fn upload_multipart_parallel(
     file_name: &str,
     key: &str,
     num_parts: usize,
-    num_tasks: usize,
     buffer_capacity: Option<usize>,
 ) -> Result<(), Error> {
     let len: u64 = std::fs::metadata(file_name)
@@ -114,11 +117,6 @@ pub async fn upload_multipart_parallel(
     // Iterate over file chunks, changing the file pointer at each iteration
     // and storing part id and associated etag into vector.
     let mut handles = Vec::new();
-    let rt = runtime::Builder::new_multi_thread()
-        .worker_threads(num_tasks)
-        .build()
-        .unwrap();
-
     for i in 0..num_parts {
         let client = client.clone();
         let bucket = bucket.to_string();
@@ -129,11 +127,16 @@ pub async fn upload_multipart_parallel(
         } else {
             last_chunk_size
         };
-        let offset = (i * len / num_parts) as u64;
+        let offset = (i * chunk_size) as u64;
         let uid = uid.to_string();
         let file_name = file_name.to_string();
 
-        let cp = rt.spawn(async move {
+        let cp = tokio::spawn(async move {
+            #[cfg(debug_assertions)]
+            {
+                use std::thread;
+                println!("{:?}", thread::current().id());
+            }
             upload_part(
                 client,
                 file_name,

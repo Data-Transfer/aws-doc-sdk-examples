@@ -2,6 +2,7 @@ use aws_sdk_s3::model::CompletedMultipartUpload;
 use aws_sdk_s3::model::CompletedPart;
 use aws_sdk_s3::types::ByteStream;
 use aws_sdk_s3::{Client, Endpoint, Error};
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::codec::{BytesCodec, FramedRead};
 /// Multipart upload example
@@ -51,6 +52,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         .endpoint_resolver(ep)
         .build();
     let client = Client::from_conf(s3_conf);
+    let start = Instant::now();
     upload_multipart(
         &client,
         &bucket,
@@ -60,6 +62,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         buffer_capacity,
     )
     .await?;
+    println!("Uploaded file in {} s", start.elapsed().as_secs_f32());
     Ok(())
 }
 
@@ -112,7 +115,7 @@ pub async fn upload_multipart(
             .try_clone()
             .await
             .map_err(|err| Error::Unhandled(Box::new(err)))?;
-        file.seek(std::io::SeekFrom::Start((i * len / num_parts) as u64))
+        file.seek(std::io::SeekFrom::Start((i * chunk_size) as u64))
             .await
             .map_err(|err| Error::Unhandled(Box::new(err)))?;
         let file_chunk = file.take(size);

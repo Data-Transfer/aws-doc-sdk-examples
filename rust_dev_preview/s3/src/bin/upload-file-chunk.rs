@@ -91,6 +91,7 @@ pub async fn upload_chunk(
     let start = Instant::now();
     let resp = client
         .put_object()
+        .content_length(chunk_size as i64)
         .bucket(bucket)
         .key(key)
         .body(body)

@@ -97,11 +97,11 @@ pub async fn upload_chunk(
         .body(body)
         .send()
         .await?;
+    let elapsed = start.elapsed();
     match resp.e_tag() {
         Some(etag) => println!("etag: {}", etag.trim_matches('"')),
         None => eprintln!("No etag in response"),
     }
-    let elapsed = start.elapsed();
     println!(
         "Uploaded chunk of size {} from file {} in {:.2} s",
         chunk_size,

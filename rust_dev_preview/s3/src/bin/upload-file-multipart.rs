@@ -5,6 +5,12 @@ use aws_sdk_s3::{Client, Endpoint, Error};
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::codec::{BytesCodec, FramedRead};
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 /// Multipart upload example
 ///
 /// ## Usage

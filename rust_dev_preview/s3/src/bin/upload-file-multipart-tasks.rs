@@ -5,6 +5,7 @@ use aws_sdk_s3::{Client, Endpoint, Error};
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio::task;
 /// Parallel multipart upload, one task per part.
 /// Number of worker threads and read buffer size can be configured from
 /// the command line.
@@ -74,7 +75,7 @@ fn main() -> Result<(), aws_sdk_s3::Error> {
                 num_parts,
                 buffer_capacity,
             )
-            .await?;
+            .await.expect("Error launching upload");
             let elapsed = start.elapsed();
             println!("Uploaded file in {:.2} s", elapsed.as_secs_f32());
             Ok(())
@@ -137,6 +138,7 @@ pub async fn upload_multipart_parallel(
                 use std::thread;
                 println!("{:?}", thread::current().id());
             }
+            task::block_in_place(move || {
             upload_part(
                 client,
                 file_name,
@@ -147,7 +149,7 @@ pub async fn upload_multipart_parallel(
                 offset,
                 size,
                 buffer_capacity,
-            )
+            )})
         });
         handles.push(cp);
     }
